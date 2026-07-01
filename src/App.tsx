@@ -1,16 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Layout } from './components/Layout';
 import { SourceModal } from './components/SourceModal';
 import { Toast } from './components/Toast';
-import { chartSources } from './data/mockDashboard';
-import { defaultRequirement, mockDocumentParsing, mockExpenseRecords } from './data/mockDocuments';
-import { mockFieldMatching, mockIntentUnderstanding } from './data/mockFieldMapping';
+import { defaultScenarioId, scenarios } from './data/scenarios';
 import { DashboardStep } from './pages/DashboardStep';
 import { DocumentParsingStep } from './pages/DocumentParsingStep';
 import { FieldMatchingStep } from './pages/FieldMatchingStep';
 import { InputStep } from './pages/InputStep';
 import { IntentUnderstandingStep } from './pages/IntentUnderstandingStep';
-import { ChartSource, ParsedField, StepId, ToastState } from './types';
+import { ChartSource, OutputMode, ParsedField, ScenarioId, StepId, ToastState } from './types';
 
 const orderedSteps: StepId[] = ['input', 'parsing', 'intent', 'mapping', 'dashboard'];
 
@@ -18,33 +16,30 @@ function getStepIndex(step: StepId) {
   return orderedSteps.indexOf(step);
 }
 
-function updateRecordsWithConfirmedFields(fields: ParsedField[]) {
-  const department = fields.find((field) => field.id === 'department')?.value;
-  const category = fields.find((field) => field.id === 'expense_category')?.value;
+function cloneFields(fields: ParsedField[]) {
+  return fields.map((field) => ({ ...field }));
+}
 
-  return mockExpenseRecords.map((record, index) => {
-    if (index !== 0) return record;
-    return {
-      ...record,
-      department: department || record.department,
-      expense_category: category || record.expense_category
-    };
-  });
+function getScenario(scenarioId: ScenarioId) {
+  return scenarios.find((scenario) => scenario.id === scenarioId) ?? scenarios[0];
 }
 
 export default function App() {
+  const initialScenario = getScenario(defaultScenarioId);
   const [currentStep, setCurrentStep] = useState<StepId>('input');
   const [unlockedStepIndex, setUnlockedStepIndex] = useState(0);
-  const [requirement, setRequirement] = useState(defaultRequirement);
-  const [scenario, setScenario] = useState('费用分析');
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(initialScenario.id);
+  const [outputMode, setOutputMode] = useState<OutputMode>('dashboard');
+  const [requirement, setRequirement] = useState(initialScenario.defaultPrompt);
   const [fileName, setFileName] = useState('');
   const [processing, setProcessing] = useState(false);
   const [processingIndex, setProcessingIndex] = useState(0);
-  const [fields, setFields] = useState<ParsedField[]>(mockDocumentParsing.fields);
+  const [fields, setFields] = useState<ParsedField[]>(cloneFields(initialScenario.parsingResult.fields));
   const [toast, setToast] = useState<ToastState | null>(null);
   const [activeSource, setActiveSource] = useState<ChartSource | null>(null);
 
-  const dashboardRecords = useMemo(() => updateRecordsWithConfirmedFields(fields), [fields]);
+  const selectedScenario = getScenario(scenarioId);
+  const dashboard = useMemo(() => selectedScenario.buildDashboard(fields), [selectedScenario, fields]);
 
   useEffect(() => {
     if (!toast) return;
@@ -54,6 +49,16 @@ export default function App() {
 
   const showToast = (message: string) => {
     setToast({ message, tone: 'success' });
+  };
+
+  const handleScenarioChange = (nextScenarioId: ScenarioId) => {
+    const nextScenario = getScenario(nextScenarioId);
+    setScenarioId(nextScenario.id);
+    setRequirement(nextScenario.defaultPrompt);
+    setFields(cloneFields(nextScenario.parsingResult.fields));
+    setUnlockedStepIndex(0);
+    setCurrentStep('input');
+    setActiveSource(null);
   };
 
   const goToStep = (step: StepId) => {
@@ -89,7 +94,7 @@ export default function App() {
       setProcessing(false);
       setUnlockedStepIndex(4);
       setCurrentStep('parsing');
-      showToast('AI 处理完成，已生成可解释的财务看板草稿。');
+      showToast(`${selectedScenario.shortName} 场景处理完成，已生成${outputMode === 'ppt' ? 'PPT 汇报草稿' : '可解释的财务看板草稿'}。`);
     }, 3350);
   };
 
@@ -108,13 +113,13 @@ export default function App() {
   };
 
   const handleViewSource = (chartId: string) => {
-    setActiveSource(chartSources.find((source) => source.chartId === chartId) ?? null);
+    setActiveSource(selectedScenario.chartSources.find((source) => source.chartId === chartId) ?? null);
   };
 
   const intent = {
-    ...mockIntentUnderstanding,
+    ...selectedScenario.intentUnderstanding,
     originalPrompt: requirement,
-    topic: scenario
+    topic: selectedScenario.name
   };
 
   return (
@@ -127,12 +132,15 @@ export default function App() {
       {currentStep === 'input' && (
         <InputStep
           requirement={requirement}
-          scenario={scenario}
+          scenario={scenarioId}
+          outputMode={outputMode}
+          scenarioOptions={scenarios}
           fileName={fileName}
           processing={processing}
           processingIndex={processingIndex}
           onRequirementChange={setRequirement}
-          onScenarioChange={setScenario}
+          onScenarioChange={handleScenarioChange}
+          onOutputModeChange={setOutputMode}
           onFileChange={setFileName}
           onGenerate={handleGenerate}
         />
@@ -140,10 +148,10 @@ export default function App() {
 
       {currentStep === 'parsing' && (
         <DocumentParsingStep
-          documentType={mockDocumentParsing.documentType}
-          typeConfidence={mockDocumentParsing.typeConfidence}
+          documentType={selectedScenario.parsingResult.documentType}
+          typeConfidence={selectedScenario.parsingResult.typeConfidence}
           fields={fields}
-          computedFields={mockDocumentParsing.computedFields}
+          computedFields={selectedScenario.parsingResult.computedFields}
           onFieldChange={handleFieldChange}
           onToast={showToast}
           onPrev={goPrev}
@@ -155,7 +163,7 @@ export default function App() {
 
       {currentStep === 'mapping' && (
         <FieldMatchingStep
-          items={mockFieldMatching}
+          items={selectedScenario.fieldMatching}
           fields={fields}
           onToast={showToast}
           onPrev={goPrev}
@@ -164,7 +172,16 @@ export default function App() {
       )}
 
       {currentStep === 'dashboard' && (
-        <DashboardStep records={dashboardRecords} onToast={showToast} onViewSource={handleViewSource} onPrev={goPrev} />
+        <DashboardStep
+          scenarioName={selectedScenario.name}
+          scenarioDescription={selectedScenario.description}
+          outputMode={outputMode}
+          dashboard={dashboard}
+          onOutputModeChange={setOutputMode}
+          onToast={showToast}
+          onViewSource={handleViewSource}
+          onPrev={goPrev}
+        />
       )}
 
       <SourceModal source={activeSource} onClose={() => setActiveSource(null)} />

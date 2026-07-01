@@ -1,5 +1,9 @@
 export type StepId = 'input' | 'parsing' | 'intent' | 'mapping' | 'dashboard';
 
+export type ScenarioId = 'expense' | 'pnl' | 'p2p';
+
+export type OutputMode = 'dashboard' | 'ppt';
+
 export type FieldStatus = '通过' | '建议确认' | '异常' | '已确认';
 
 export interface ParsedField {
@@ -69,7 +73,7 @@ export interface DashboardMetric {
   label: string;
   value: string;
   helper: string;
-  tone: 'blue' | 'green' | 'orange' | 'slate';
+  tone: 'blue' | 'green' | 'orange' | 'slate' | 'red';
 }
 
 export interface ChartSource {
@@ -77,6 +81,53 @@ export interface ChartSource {
   title: string;
   sourceFields: SourceField[];
   explanation: string;
+}
+
+export interface ChartSeries {
+  key: string;
+  name: string;
+  color: string;
+}
+
+export interface ChartDefinition {
+  id: string;
+  title: string;
+  type: 'bar' | 'line' | 'pie' | 'waterfall';
+  data: Array<Record<string, string | number>>;
+  xKey: string;
+  series: ChartSeries[];
+}
+
+export interface TableColumn {
+  key: string;
+  label: string;
+}
+
+export interface DashboardTable {
+  id: string;
+  title: string;
+  columns: TableColumn[];
+  rows: Array<Record<string, string | number>>;
+}
+
+export interface ScenarioDashboard {
+  metrics: DashboardMetric[];
+  charts: ChartDefinition[];
+  tables: DashboardTable[];
+}
+
+export interface ScenarioConfig {
+  id: ScenarioId;
+  name: string;
+  shortName: string;
+  description: string;
+  uploadHint: string;
+  defaultPrompt: string;
+  parsingResult: DocumentParsingResult;
+  intentUnderstanding: IntentUnderstanding;
+  fieldMatching: FieldMatchingItem[];
+  chartSources: ChartSource[];
+  buildDashboard: (fields: ParsedField[]) => ScenarioDashboard;
 }
 
 export interface ToastState {
